@@ -3,7 +3,7 @@ module Main where
 import Control.Concurrent
 import Control.Exception qualified as Exception
 import System.Console.Terminal.Size qualified as TSize
-import System.IO (BufferMode (..), hSetBuffering, hSetEcho, stdin)
+import System.IO (BufferMode (..), hFlush, hSetBuffering, hSetEcho, stdin, stdout)
 import System.IO.Error qualified as IOError
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal
@@ -58,6 +58,7 @@ main = catchIOException $ do
         _termSize <- termSize >>= maybeToIOException "Failed reading terminal size"
         cursorToXY 10 20
         putStr $ "Hello, Haskell!" <> show _termSize
+        hFlush stdout
         threadDelay 3_000_000
         cursorToXY 10 20
         putStr "XXX"
