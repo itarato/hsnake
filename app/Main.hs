@@ -5,7 +5,7 @@ module Main where
 import Control.Concurrent
 import Control.Exception qualified as Exception
 import System.Console.Terminal.Size qualified as TSize
-import System.IO (BufferMode (..), hFlush, hSetBuffering, hSetEcho, hShow, stdin, stdout)
+import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdin, stdout)
 import System.IO.Error qualified as IOError
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal
@@ -106,9 +106,29 @@ directionMap _ = error "Invalid direction"
 newHead :: GameState -> Coord
 newHead state = directionMap (direction state) <> head (parts state)
 
+nonBlockGetChar :: IO (Maybe Char)
+nonBlockGetChar = do
+  stdin_ready <- hReady stdin
+  if stdin_ready
+    then do
+      Just <$> getChar
+    else do
+      return Nothing
+
+newDirection :: Maybe Char -> Int -> Int
+newDirection (Just 'w') _ = NORTH
+newDirection (Just 'd') _ = EAST
+newDirection (Just 's') _ = SOUTH
+newDirection (Just 'a') _ = WEST
+newDirection _ d = d
+
+newDead :: Maybe Char -> Bool -> Bool
+newDead (Just '\ESC') _ = True
+newDead _ d = d
+
 gameLoop :: GameState -> IO ()
 gameLoop state = do
-  if length (parts state) > 10
+  if dead state
     then do
       putStrAndFlush "Game Over"
     else do
@@ -117,8 +137,11 @@ gameLoop state = do
       cursorToXY newHead'
       putStr PART
       hFlush stdout
-      threadDelay 1_000_000
-      gameLoop state {parts = newParts, dead = True}
+      input <- nonBlockGetChar
+      let newDirection' = newDirection input (direction state)
+      let newDead' = newDead input (dead state)
+      threadDelay 100_000
+      gameLoop state {parts = newParts, direction = newDirection', dead = newDead'}
 
 drawBaseState :: GameState -> IO ()
 drawBaseState state = do
