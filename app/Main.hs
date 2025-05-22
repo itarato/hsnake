@@ -4,8 +4,6 @@ module Main where
 
 import Control.Concurrent
 import Control.Exception qualified as Exception
-import Control.Monad
-import GHC.Conc (par)
 import System.Console.Terminal.Size qualified as TSize
 import System.IO (BufferMode (..), hFlush, hSetBuffering, hSetEcho, stdin, stdout)
 import System.IO.Error qualified as IOError
@@ -125,17 +123,6 @@ drawBaseState state = do
     drawPart coord = do
       cursorToXY coord
       putStr PART
-
--- cursorToXY 10 20
--- putStr "Hello, Haskell!"
--- hFlush stdout
--- threadDelay 3_000_000
--- cursorToXY 10 20
--- putStr "XXX"
--- cursorToXY 11 20
--- putStr "XXX"
--- mapM (\n -> putStr (show n) >> hFlush stdout >> guard (n <= 5) >> threadDelay 300_000) [1 .. 10]
--- return ()
 
 main :: IO ()
 main = catchIOException $ do
