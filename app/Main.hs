@@ -5,7 +5,7 @@ module Main where
 import Control.Concurrent
 import Control.Exception qualified as Exception
 import System.Console.Terminal.Size qualified as TSize
-import System.IO (BufferMode (..), hFlush, hSetBuffering, hSetEcho, stdin, stdout)
+import System.IO (BufferMode (..), hFlush, hSetBuffering, hSetEcho, hShow, stdin, stdout)
 import System.IO.Error qualified as IOError
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal
@@ -50,6 +50,12 @@ clearScreen = putStr "\ESC[2J"
 cursorToXY :: Coord -> IO ()
 cursorToXY (Coord (col, row)) = putStr $ "\ESC[" ++ show row ++ ";" ++ show col ++ "H"
 
+hideCursor :: IO ()
+hideCursor = putStr "\ESC[?25l"
+
+showCursor :: IO ()
+showCursor = putStr "\ESC[?25h"
+
 getTermSize :: IO (Maybe Coord)
 getTermSize = do
   window <- TSize.size
@@ -64,7 +70,6 @@ maybeToIOException msg _ = Exception.throwIO . IOError.userError $ msg
 enableTerminalRawMode :: IO TerminalAttributes
 enableTerminalRawMode = do
   oldConfig <- getTerminalAttributes stdInput
-
   hSetBuffering stdin NoBuffering
   hSetEcho stdin False
 
@@ -76,7 +81,7 @@ enableTerminalRawMode = do
           `withoutMode` InterruptOnBreak
 
   setTerminalAttributes stdInput newConfig Immediately
-
+  hideCursor
   return oldConfig
 
 restoreTerminalMode :: TerminalAttributes -> IO ()
@@ -84,6 +89,7 @@ restoreTerminalMode oldConfig = do
   setTerminalAttributes stdInput oldConfig Immediately
   hSetBuffering stdin LineBuffering
   hSetEcho stdin True
+  showCursor
 
 putStrAndFlush :: String -> IO ()
 putStrAndFlush s = do
