@@ -10,14 +10,7 @@ import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdi
 import System.IO.Error qualified as IOError
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal
-
-newtype Coord = Coord (Int, Int) deriving (Show, Eq)
-
-instance Semigroup Coord where
-  (<>) (Coord (x1, y1)) (Coord (x2, y2)) = Coord (x1 + x2, y1 + y2)
-
-instance Monoid Coord where
-  mempty = Coord (0, 0)
+import System.Random
 
 pattern NORTH :: Int
 pattern NORTH = 0
@@ -34,17 +27,28 @@ pattern WEST = 3
 pattern PART :: Char
 pattern PART = '█'
 
+newtype Coord = Coord (Int, Int) deriving (Show, Eq)
+
+instance Semigroup Coord where
+  (<>) (Coord (x1, y1)) (Coord (x2, y2)) = Coord (x1 + x2, y1 + y2)
+
+instance Monoid Coord where
+  mempty = Coord (0, 0)
+
 data GameState = MakeGameState
   { frame :: Coord,
     direction :: Int,
     parts :: [Coord],
     dead :: Bool,
-    grow :: Int
+    grow :: Int,
+    rng :: StdGen,
+    food :: [Coord]
   }
   deriving (Show)
 
+-- TODO replace RNG seed with time
 initGameState :: Coord -> GameState
-initGameState frame@(Coord (w, h)) = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3
+initGameState frame@(Coord (w, h)) = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3 (mkStdGen 1337) []
 
 clearScreen :: IO ()
 clearScreen = putStr "\ESC[2J"
@@ -137,10 +141,18 @@ truncateTail [] True = []
 truncateTail [_] True = []
 truncateTail (x : xs) True = x : truncateTail xs True
 
+randCoord :: (RandomGen r) => r -> Coord -> (Coord, r)
+randCoord rng (Coord (w, h)) = (coord, rng'')
+  where
+    (w', rng') = randomR (0, w) rng
+    (h', rng'') = randomR (0, h) rng'
+    coord = Coord (w', h')
+
 gameLoop :: GameState -> IO ()
 gameLoop state = do
   if dead state
     then do
+      -- TODO Shrinking dying animation.
       putStrAndFlush "Game Over"
     else do
       let newHead' = newHead state
@@ -156,6 +168,7 @@ gameLoop state = do
       hFlush stdout
       input <- nonBlockGetChar
       let newDirection' = newDirection input (direction state)
+      -- TODO Die also when reaching frame.
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state)
       threadDelay 100_000
       gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow}
