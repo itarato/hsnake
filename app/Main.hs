@@ -4,13 +4,14 @@ module Main where
 
 import Control.Concurrent
 import Control.Exception qualified as Exception
+import Control.Monad (when)
 import System.Console.Terminal.Size qualified as TSize
 import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdin, stdout)
 import System.IO.Error qualified as IOError
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal
 
-newtype Coord = Coord (Int, Int) deriving (Show)
+newtype Coord = Coord (Int, Int) deriving (Show, Eq)
 
 instance Semigroup Coord where
   (<>) (Coord (x1, y1)) (Coord (x2, y2)) = Coord (x1 + x2, y1 + y2)
@@ -30,19 +31,20 @@ pattern SOUTH = 2
 pattern WEST :: Int
 pattern WEST = 3
 
-pattern PART :: String
-pattern PART = "X"
+pattern PART :: Char
+pattern PART = '█'
 
 data GameState = MakeGameState
   { frame :: Coord,
     direction :: Int,
     parts :: [Coord],
-    dead :: Bool
+    dead :: Bool,
+    grow :: Int
   }
   deriving (Show)
 
 initGameState :: Coord -> GameState
-initGameState frame@(Coord (w, h)) = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False
+initGameState frame@(Coord (w, h)) = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3
 
 clearScreen :: IO ()
 clearScreen = putStr "\ESC[2J"
@@ -122,9 +124,18 @@ newDirection (Just 's') _ = SOUTH
 newDirection (Just 'a') _ = WEST
 newDirection _ d = d
 
-newDead :: Maybe Char -> Bool -> Bool
-newDead (Just '\ESC') _ = True
-newDead _ d = d
+didHitExit :: Maybe Char -> Bool
+didHitExit (Just '\ESC') = True
+didHitExit _ = False
+
+didBiteItself :: Coord -> [Coord] -> Bool
+didBiteItself = elem
+
+truncateTail :: [Coord] -> Bool -> [Coord]
+truncateTail xs False = xs
+truncateTail [] True = []
+truncateTail [_] True = []
+truncateTail (x : xs) True = x : truncateTail xs True
 
 gameLoop :: GameState -> IO ()
 gameLoop state = do
@@ -133,15 +144,21 @@ gameLoop state = do
       putStrAndFlush "Game Over"
     else do
       let newHead' = newHead state
-      let newParts = newHead' : parts state
+      let needShrink = grow state == 0
+      let newParts = newHead' : truncateTail (parts state) needShrink
+      let newGrow = if needShrink then grow state else grow state - 1
       cursorToXY newHead'
-      putStr PART
+      putChar PART
+      when needShrink $
+        do
+          cursorToXY $ last (parts state)
+          putChar ' '
       hFlush stdout
       input <- nonBlockGetChar
       let newDirection' = newDirection input (direction state)
-      let newDead' = newDead input (dead state)
+      let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state)
       threadDelay 100_000
-      gameLoop state {parts = newParts, direction = newDirection', dead = newDead'}
+      gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow}
 
 drawBaseState :: GameState -> IO ()
 drawBaseState state = do
@@ -151,7 +168,7 @@ drawBaseState state = do
   where
     drawPart coord = do
       cursorToXY coord
-      putStr PART
+      putChar PART
 
 main :: IO ()
 main = catchIOException $ do
