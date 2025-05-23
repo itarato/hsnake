@@ -2,16 +2,33 @@
 
 module Main where
 
-import Control.Concurrent
+import Control.Concurrent (threadDelay)
 import Control.Exception qualified as Exception
-import Control.Monad (when)
-import Data.Time.Clock.POSIX
+import Control.Monad (forM_, when)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Console.Terminal.Size qualified as TSize
 import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdin, stdout)
 import System.IO.Error qualified as IOError
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal
+  ( TerminalAttributes,
+    TerminalMode
+      ( EnableEcho,
+        InterruptOnBreak,
+        KeyboardInterrupts,
+        ProcessInput
+      ),
+    TerminalState (Immediately),
+    getTerminalAttributes,
+    setTerminalAttributes,
+    withoutMode,
+  )
 import System.Random
+  ( Random (randomR),
+    RandomGen,
+    StdGen,
+    mkStdGen,
+  )
 
 pattern NORTH :: Int
 pattern NORTH = 0
@@ -34,6 +51,12 @@ pattern FOOD = '$'
 pattern GROW_SIZE :: Int
 pattern GROW_SIZE = 3
 
+pattern FOOD_TRY_LIMIT :: Int
+pattern FOOD_TRY_LIMIT = 16
+
+pattern FRAME :: Char
+pattern FRAME = '░'
+
 newtype Coord = Coord (Int, Int) deriving (Show, Eq)
 
 instance Semigroup Coord where
@@ -53,7 +76,6 @@ data GameState = MakeGameState
   }
   deriving (Show)
 
--- TODO replace RNG seed with time
 initGameState :: Coord -> Int -> GameState
 initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3 rng' foodCoord
   where
@@ -128,7 +150,7 @@ nonBlockGetChar prev_input = do
   if stdin_ready
     then do
       c <- getChar
-      -- Makes sure it flushes the stdin buffer and keeps only the last one
+      -- Makes sure it flushes the stdin buffer and keeps only the last one.
       nonBlockGetChar (Just c)
     else do
       return prev_input
@@ -153,13 +175,32 @@ truncateTail [] True = []
 truncateTail [_] True = []
 truncateTail (x : xs) True = x : truncateTail xs True
 
--- TODO Add a wrapper that calls this until it does not match a provided list of coords (no new coord on snake).
 randCoord :: (RandomGen r) => r -> Coord -> (Coord, r)
 randCoord rng (Coord (w, h)) = (coord, rng'')
   where
-    (w', rng') = randomR (1, w - 1) rng
-    (h', rng'') = randomR (1, h - 1) rng'
+    (w', rng') = randomR (2, w - 1) rng
+    (h', rng'') = randomR (2, h - 1) rng'
     coord = Coord (w', h')
+
+randCoordExcept :: (RandomGen r) => r -> Coord -> [Coord] -> Int -> (Coord, r)
+-- TODO This is not elegant. Find something reliable and use Maybe Coord for result.
+randCoordExcept _ _ _ 0 = error "Cannot find empty position for food"
+randCoordExcept rng frame excepts limit =
+  if coord `elem` excepts
+    then
+      randCoordExcept rng' frame excepts (limit - 1)
+    else
+      (coord, rng')
+  where
+    (coord, rng') = randCoord rng frame
+
+inFrame :: Coord -> Coord -> Bool
+inFrame (Coord (x, y)) (Coord (w, h))
+  | x <= 1 = False
+  | y <= 1 = False
+  | x >= w = False
+  | y >= h = False
+  | otherwise = True
 
 gameLoop :: GameState -> IO ()
 gameLoop state = do
@@ -173,7 +214,8 @@ gameLoop state = do
       let newParts = newHead' : truncateTail (parts state) needShrink
       let newGrow = if needShrink then grow state else grow state - 1
       let didEatFood = newHead' == food state
-      let (newFood, newRng) = if didEatFood then randCoord (rng state) (frame state) else (food state, rng state)
+      let occupiedCoords = food state : newParts
+      let (newFood, newRng) = if didEatFood then randCoordExcept (rng state) (frame state) occupiedCoords FOOD_TRY_LIMIT else (food state, rng state)
       let newGrow' = if didEatFood then newGrow + GROW_SIZE else newGrow
       cursorToXY newHead'
       putChar PART
@@ -188,22 +230,35 @@ gameLoop state = do
       hFlush stdout
       input <- nonBlockGetChar Nothing
       let newDirection' = newDirection input (direction state)
+      let didCrossFrame = not $ inFrame newHead' (frame state)
       -- TODO Die also when reaching frame.
-      let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state)
+      let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state) || didCrossFrame
       threadDelay 100_000
       gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow', food = newFood, rng = newRng}
 
 drawBaseState :: GameState -> IO ()
 drawBaseState state = do
+  drawFrame
   mapM_ drawPart (parts state)
   cursorToXY $ food state
   putChar FOOD
   hFlush stdout
   return ()
   where
+    (Coord (width, height)) = frame state
     drawPart coord = do
       cursorToXY coord
       putChar PART
+    hline = FRAME : replicate (width - 2) ' ' ++ [FRAME]
+    drawHLine i = do
+      cursorToXY $ Coord (1, i)
+      putStr hline
+    drawFrame = do
+      forM_ [2 .. (height - 1)] drawHLine
+      cursorToXY $ Coord (1, 1)
+      putStr $ replicate width FRAME
+      cursorToXY $ Coord (1, height)
+      putStr $ replicate width FRAME
 
 getCurrentTimestamp :: IO Int
 getCurrentTimestamp = floor <$> getPOSIXTime
