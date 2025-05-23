@@ -127,7 +127,8 @@ nonBlockGetChar = do
   stdin_ready <- hReady stdin
   if stdin_ready
     then do
-      Just <$> getChar
+      c <- getChar
+      return $ Just c
     else do
       return Nothing
 
@@ -155,8 +156,8 @@ truncateTail (x : xs) True = x : truncateTail xs True
 randCoord :: (RandomGen r) => r -> Coord -> (Coord, r)
 randCoord rng (Coord (w, h)) = (coord, rng'')
   where
-    (w', rng') = randomR (0, w) rng
-    (h', rng'') = randomR (0, h) rng'
+    (w', rng') = randomR (0, w - 1) rng
+    (h', rng'') = randomR (0, h - 1) rng'
     coord = Coord (w', h')
 
 gameLoop :: GameState -> IO ()
