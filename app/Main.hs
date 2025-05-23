@@ -231,7 +231,6 @@ gameLoop state = do
       input <- nonBlockGetChar Nothing
       let newDirection' = newDirection input (direction state)
       let didCrossFrame = not $ inFrame newHead' (frame state)
-      -- TODO Die also when reaching frame.
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state) || didCrossFrame
       threadDelay 100_000
       gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow', food = newFood, rng = newRng}
