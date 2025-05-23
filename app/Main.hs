@@ -5,6 +5,7 @@ module Main where
 import Control.Concurrent
 import Control.Exception qualified as Exception
 import Control.Monad (when)
+import Data.Time.Clock.POSIX
 import System.Console.Terminal.Size qualified as TSize
 import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdin, stdout)
 import System.IO.Error qualified as IOError
@@ -53,10 +54,10 @@ data GameState = MakeGameState
   deriving (Show)
 
 -- TODO replace RNG seed with time
-initGameState :: Coord -> GameState
-initGameState frame@(Coord (w, h)) = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3 rng' foodCoord
+initGameState :: Coord -> Int -> GameState
+initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3 rng' foodCoord
   where
-    rng = mkStdGen 1337
+    rng = mkStdGen rngSeed
     (foodCoord, rng') = randCoord rng frame
 
 clearScreen :: IO ()
@@ -121,16 +122,16 @@ directionMap _ = error "Invalid direction"
 newHead :: GameState -> Coord
 newHead state = directionMap (direction state) <> head (parts state)
 
--- TODO Have a stdin flush
-nonBlockGetChar :: IO (Maybe Char)
-nonBlockGetChar = do
+nonBlockGetChar :: Maybe Char -> IO (Maybe Char)
+nonBlockGetChar prev_input = do
   stdin_ready <- hReady stdin
   if stdin_ready
     then do
       c <- getChar
-      return $ Just c
+      -- Makes sure it flushes the stdin buffer and keeps only the last one
+      nonBlockGetChar (Just c)
     else do
-      return Nothing
+      return prev_input
 
 newDirection :: Maybe Char -> Int -> Int
 newDirection (Just 'w') _ = NORTH
@@ -156,8 +157,8 @@ truncateTail (x : xs) True = x : truncateTail xs True
 randCoord :: (RandomGen r) => r -> Coord -> (Coord, r)
 randCoord rng (Coord (w, h)) = (coord, rng'')
   where
-    (w', rng') = randomR (0, w - 1) rng
-    (h', rng'') = randomR (0, h - 1) rng'
+    (w', rng') = randomR (1, w - 1) rng
+    (h', rng'') = randomR (1, h - 1) rng'
     coord = Coord (w', h')
 
 gameLoop :: GameState -> IO ()
@@ -185,7 +186,7 @@ gameLoop state = do
           cursorToXY newFood
           putChar FOOD
       hFlush stdout
-      input <- nonBlockGetChar
+      input <- nonBlockGetChar Nothing
       let newDirection' = newDirection input (direction state)
       -- TODO Die also when reaching frame.
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state)
@@ -204,6 +205,9 @@ drawBaseState state = do
       cursorToXY coord
       putChar PART
 
+getCurrentTimestamp :: IO Int
+getCurrentTimestamp = floor <$> getPOSIXTime
+
 main :: IO ()
 main = catchIOException $ do
   oldTerminalConfig <- enableTerminalRawMode
@@ -211,7 +215,8 @@ main = catchIOException $ do
     ( do
         clearScreen
         termSize <- getTermSize >>= maybeToIOException "Failed reading terminal size"
-        let gameState = initGameState termSize
+        rngSeed <- getCurrentTimestamp
+        let gameState = initGameState termSize rngSeed
         drawBaseState gameState
         gameLoop gameState
         return ()

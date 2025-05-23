@@ -72,7 +72,8 @@ executable termsnake
                     terminal-size,
                     transformers,
                     unix,
-                    random
+                    random,
+                    time
 
     -- Directories containing source files.
     hs-source-dirs:   app
