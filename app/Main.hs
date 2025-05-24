@@ -4,7 +4,7 @@ module Main where
 
 import Control.Concurrent (threadDelay)
 import Control.Exception qualified as Exception
-import Control.Monad (forM_, join, when)
+import Control.Monad (forM_, when)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Console.Terminal.Size qualified as TSize
 import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdin, stdout)
@@ -45,6 +45,9 @@ pattern WEST = 3
 pattern PART :: String
 pattern PART = "\ESC[94m▒\ESC[0m"
 
+pattern PART_DEAD :: String
+pattern PART_DEAD = "\ESC[91m▒\ESC[0m"
+
 pattern HEAD :: String
 pattern HEAD = "\ESC[94m█\ESC[0m"
 
@@ -59,6 +62,12 @@ pattern FOOD_TRY_LIMIT = 16
 
 pattern FRAME :: String
 pattern FRAME = "\ESC[32m░\ESC[0m"
+
+pattern MIN_SPEED :: Int
+pattern MIN_SPEED = 100_000
+
+pattern MAX_SPEED :: Int
+pattern MAX_SPEED = 10_000
 
 newtype Coord = Coord (Int, Int) deriving (Show, Eq)
 
@@ -75,14 +84,16 @@ data GameState = MakeGameState
     dead :: Bool,
     grow :: Int,
     rng :: StdGen,
-    food :: Coord
+    food :: Coord,
+    speed :: Int,
+    score :: Int
   }
   deriving (Show)
 
-data KeyStroke = KeyEsc | KeyLeft | KeyRight | KeyUp | KeyDown
+data KeyStroke = KeyEsc | KeyLeft | KeyRight | KeyUp | KeyDown | KeySpace deriving (Eq)
 
 initGameState :: Coord -> Int -> GameState
-initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 2 rng' foodCoord
+initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False (GROW_SIZE - 1) rng' foodCoord MIN_SPEED 0
   where
     rng = mkStdGen rngSeed
     (foodCoord, rng') = randCoord rng frame
@@ -167,6 +178,7 @@ nonBlockGetKeyStroke xs
   | xs == ['\ESC', '[', 'B'] = return $ Just KeyDown
   | xs == ['\ESC', '[', 'C'] = return $ Just KeyRight
   | xs == ['\ESC', '[', 'D'] = return $ Just KeyLeft
+  | xs == [' '] = return $ Just KeySpace
   | xs == ['\ESC'] = do
       stdin_ready <- hReady stdin
       if stdin_ready
@@ -245,6 +257,12 @@ inFrame (Coord (x, y)) (Coord (w, h))
   | y >= h = False
   | otherwise = True
 
+newSpeed :: Int -> Maybe KeyStroke -> Int
+-- Speed up.
+newSpeed s (Just KeySpace) = let s' = round (fromIntegral s * 0.7) in max MAX_SPEED s'
+-- Slow down.
+newSpeed s _ = let s' = round (fromIntegral s * 1.15) in min MIN_SPEED s'
+
 gameLoop :: GameState -> IO ()
 gameLoop state = do
   if dead state
@@ -255,6 +273,7 @@ gameLoop state = do
       let newParts = newHead' : truncateTail (parts state) needShrink
       let newGrow = if needShrink then grow state else grow state - 1
       let didEatFood = newHead' == food state
+      let newScore = if didEatFood then score state + 1 else score state
       let occupiedCoords = food state : newParts
       let (newFood, newRng) = if didEatFood then randCoordExcept (rng state) (frame state) occupiedCoords FOOD_TRY_LIMIT else (food state, rng state)
       let newGrow' = if didEatFood then newGrow + GROW_SIZE else newGrow
@@ -275,20 +294,29 @@ gameLoop state = do
       let newDirection' = newDirection input (direction state)
       let didCrossFrame = not $ inFrame newHead' (frame state)
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state) || didCrossFrame
-      threadDelay 100_000
-      gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow', food = newFood, rng = newRng}
+      let newSpeed' = newSpeed (speed state) input
+      threadDelay newSpeed'
+      when didEatFood $ do
+        cursorToXY (Coord (3, h))
+        putStr $ " Score: " ++ show newScore ++ " "
+      gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow', food = newFood, rng = newRng, speed = newSpeed', score = newScore}
+  where
+    (Coord (_, h)) = frame state
 
+-- TODO Make animation fix time independently from length.
 gameLoopStageEnd :: GameState -> IO ()
 gameLoopStageEnd state = do
-  forM_ (reverse $ parts state) erasePart
+  let animDelay = 2_000_000 `div` length (parts state)
+  forM_ (reverse $ parts state) (overPaintPart PART_DEAD 0)
+  forM_ (reverse $ parts state) (overPaintPart " " animDelay)
   clearScreen
   cursorToXY $ Coord (1, 1)
   where
-    erasePart coord = do
+    overPaintPart c delay coord = do
       cursorToXY coord
-      putChar ' '
+      putStr c
       hFlush stdout
-      threadDelay 100_000
+      threadDelay delay
 
 joinStr :: [String] -> String
 joinStr = foldl (<>) ""
@@ -318,6 +346,8 @@ drawBaseState state = do
       putStr $ joinStr (replicate width FRAME)
       cursorToXY $ Coord (3, 1)
       putStr " hSnake "
+      cursorToXY (Coord (3, height))
+      putStr " Score: - "
 
 getCurrentTimestamp :: IO Int
 getCurrentTimestamp = floor <$> getPOSIXTime
