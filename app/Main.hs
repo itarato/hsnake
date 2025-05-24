@@ -63,10 +63,10 @@ pattern FOOD_TRY_LIMIT = 16
 pattern FRAME :: String
 pattern FRAME = "\ESC[32m░\ESC[0m"
 
-pattern MIN_SPEED :: Int
+pattern MIN_SPEED :: (Integral a) => a
 pattern MIN_SPEED = 100_000
 
-pattern MAX_SPEED :: Int
+pattern MAX_SPEED :: (Integral a) => a
 pattern MAX_SPEED = 10_000
 
 newtype Coord = Coord (Int, Int) deriving (Show, Eq)
@@ -257,11 +257,11 @@ inFrame (Coord (x, y)) (Coord (w, h))
   | y >= h = False
   | otherwise = True
 
-newSpeed :: Int -> Maybe KeyStroke -> Int
+newSpeed :: (Integral a) => Int -> Maybe KeyStroke -> a
 -- Speed up.
-newSpeed s (Just KeySpace) = let s' = round (fromIntegral s * 0.7) in max MAX_SPEED s'
+newSpeed s (Just KeySpace) = let s' = round ((fromIntegral s :: Double) * 0.7) in max MAX_SPEED s'
 -- Slow down.
-newSpeed s _ = let s' = round (fromIntegral s * 1.15) in min MIN_SPEED s'
+newSpeed s _ = let s' = round ((fromIntegral s :: Double) * 1.15) in min MIN_SPEED s'
 
 gameLoop :: GameState -> IO ()
 gameLoop state = do
