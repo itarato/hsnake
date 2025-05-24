@@ -142,7 +142,18 @@ directionMap WEST = Coord (-1, 0)
 directionMap _ = error "Invalid direction"
 
 newHead :: GameState -> Coord
-newHead state = directionMap (direction state) <> head (parts state)
+newHead state = wrapHead newHead' $ frame state
+  where
+    newHead' = directionMap (direction state) <> head (parts state)
+
+wrapHead :: Coord -> Coord -> Coord
+wrapHead (Coord (x, y)) (Coord (w, h)) = Coord (wrap x 2 (w - 1), wrap y 2 (h - 1))
+
+wrap :: Int -> Int -> Int -> Int
+wrap v minV maxV
+  | v < minV = maxV
+  | v > maxV = minV
+  | otherwise = v
 
 nonBlockGetChar :: Maybe Char -> IO (Maybe Char)
 nonBlockGetChar prev_input = do
