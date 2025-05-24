@@ -157,16 +157,6 @@ wrap v minV maxV
   | v > maxV = minV
   | otherwise = v
 
--- nonBlockGetChar :: Maybe Char -> IO (Maybe Char)
--- nonBlockGetChar prev_input = do
---   stdin_ready <- hReady stdin
---   if stdin_ready
---     then do
---       c <- getChar
---       -- Makes sure it flushes the stdin buffer and keeps only the last one.
---       nonBlockGetChar (Just c)
---     else return prev_input
-
 nonBlockGetKeyStroke :: [Char] -> IO (Maybe KeyStroke)
 nonBlockGetKeyStroke xs
   | length xs > 3 = return Nothing
