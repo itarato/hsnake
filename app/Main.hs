@@ -76,6 +76,8 @@ data GameState = MakeGameState
   }
   deriving (Show)
 
+data KeyStroke = KeyEsc | KeyLeft | KeyRight | KeyUp | KeyDown
+
 initGameState :: Coord -> Int -> GameState
 initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3 rng' foodCoord
   where
@@ -155,36 +157,47 @@ wrap v minV maxV
   | v > maxV = minV
   | otherwise = v
 
-nonBlockGetChar :: Maybe Char -> IO (Maybe Char)
-nonBlockGetChar prev_input = do
-  stdin_ready <- hReady stdin
-  if stdin_ready
-    then do
-      c <- getChar
-      -- Makes sure it flushes the stdin buffer and keeps only the last one.
-      nonBlockGetChar (Just c)
-    else do
-      return prev_input
+-- nonBlockGetChar :: Maybe Char -> IO (Maybe Char)
+-- nonBlockGetChar prev_input = do
+--   stdin_ready <- hReady stdin
+--   if stdin_ready
+--     then do
+--       c <- getChar
+--       -- Makes sure it flushes the stdin buffer and keeps only the last one.
+--       nonBlockGetChar (Just c)
+--     else return prev_input
 
-newDirection :: Maybe Char -> Int -> Int
--- Z/M left right turn
-newDirection (Just 'z') d = (d - 1) `mod` 4
-newDirection (Just 'm') d = (d + 1) `mod` 4
--- Backwards turn omitted.
-newDirection (Just 'w') SOUTH = SOUTH
-newDirection (Just 'd') WEST = WEST
-newDirection (Just 's') NORTH = NORTH
-newDirection (Just 'a') EAST = EAST
--- W/S/A/D absolute directions.
-newDirection (Just 'w') _ = NORTH
-newDirection (Just 'd') _ = EAST
-newDirection (Just 's') _ = SOUTH
-newDirection (Just 'a') _ = WEST
--- Unknown key.
+nonBlockGetKeyStroke :: [Char] -> IO (Maybe KeyStroke)
+nonBlockGetKeyStroke xs
+  | length xs > 3 = return Nothing
+  | xs == ['\ESC', '[', 'A'] = return $ Just KeyUp
+  | xs == ['\ESC', '[', 'B'] = return $ Just KeyDown
+  | xs == ['\ESC', '[', 'C'] = return $ Just KeyRight
+  | xs == ['\ESC', '[', 'D'] = return $ Just KeyLeft
+  | xs == ['\ESC'] = do
+      stdin_ready <- hReady stdin
+      if stdin_ready
+        then do
+          c <- getChar
+          nonBlockGetKeyStroke ['\ESC', c]
+        else return $ Just KeyEsc
+  | otherwise = do
+      stdin_ready <- hReady stdin
+      if stdin_ready
+        then do
+          c <- getChar
+          nonBlockGetKeyStroke $ xs ++ [c]
+        else return Nothing
+
+newDirection :: Maybe KeyStroke -> Int -> Int
+newDirection (Just KeyDown) _ = SOUTH
+newDirection (Just KeyLeft) _ = WEST
+newDirection (Just KeyRight) _ = EAST
+newDirection (Just KeyUp) _ = NORTH
 newDirection _ d = d
 
-didHitExit :: Maybe Char -> Bool
-didHitExit (Just '\ESC') = True
+didHitExit :: Maybe KeyStroke -> Bool
+didHitExit (Just KeyEsc) = True
 didHitExit _ = False
 
 didBiteItself :: Coord -> [Coord] -> Bool
@@ -249,7 +262,7 @@ gameLoop state = do
           cursorToXY newFood
           putChar FOOD
       hFlush stdout
-      input <- nonBlockGetChar Nothing
+      input <- nonBlockGetKeyStroke []
       let newDirection' = newDirection input (direction state)
       let didCrossFrame = not $ inFrame newHead' (frame state)
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state) || didCrossFrame
