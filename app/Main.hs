@@ -167,10 +167,20 @@ nonBlockGetChar prev_input = do
       return prev_input
 
 newDirection :: Maybe Char -> Int -> Int
+-- Z/M left right turn
+newDirection (Just 'z') d = (d - 1) `mod` 4
+newDirection (Just 'm') d = (d + 1) `mod` 4
+-- Backwards turn omitted.
+newDirection (Just 'w') SOUTH = SOUTH
+newDirection (Just 'd') WEST = WEST
+newDirection (Just 's') NORTH = NORTH
+newDirection (Just 'a') EAST = EAST
+-- W/S/A/D absolute directions.
 newDirection (Just 'w') _ = NORTH
 newDirection (Just 'd') _ = EAST
 newDirection (Just 's') _ = SOUTH
 newDirection (Just 'a') _ = WEST
+-- Unknown key.
 newDirection _ d = d
 
 didHitExit :: Maybe Char -> Bool
