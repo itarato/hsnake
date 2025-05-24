@@ -189,7 +189,23 @@ nonBlockGetKeyStroke xs
           nonBlockGetKeyStroke $ xs ++ [c]
         else return Nothing
 
+nonBlockGetKeyStrokeAndFlushStdin :: IO (Maybe KeyStroke)
+nonBlockGetKeyStrokeAndFlushStdin = do
+  result <- nonBlockGetKeyStroke []
+  flushStdin
+  return result
+  where
+    flushStdin = do
+      stdin_ready <- hReady stdin
+      when stdin_ready $ do
+        _ <- getChar
+        flushStdin
+
 newDirection :: Maybe KeyStroke -> Int -> Int
+newDirection (Just KeyDown) NORTH = NORTH
+newDirection (Just KeyLeft) EAST = EAST
+newDirection (Just KeyRight) WEST = WEST
+newDirection (Just KeyUp) SOUTH = SOUTH
 newDirection (Just KeyDown) _ = SOUTH
 newDirection (Just KeyLeft) _ = WEST
 newDirection (Just KeyRight) _ = EAST
@@ -262,7 +278,7 @@ gameLoop state = do
           cursorToXY newFood
           putChar FOOD
       hFlush stdout
-      input <- nonBlockGetKeyStroke []
+      input <- nonBlockGetKeyStrokeAndFlushStdin
       let newDirection' = newDirection input (direction state)
       let didCrossFrame = not $ inFrame newHead' (frame state)
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state) || didCrossFrame
