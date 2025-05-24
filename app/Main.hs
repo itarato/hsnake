@@ -79,7 +79,7 @@ data GameState = MakeGameState
 data KeyStroke = KeyEsc | KeyLeft | KeyRight | KeyUp | KeyDown
 
 initGameState :: Coord -> Int -> GameState
-initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 3 rng' foodCoord
+initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 16 rng' foodCoord
   where
     rng = mkStdGen rngSeed
     (foodCoord, rng') = randCoord rng frame
@@ -245,9 +245,7 @@ inFrame (Coord (x, y)) (Coord (w, h))
 gameLoop :: GameState -> IO ()
 gameLoop state = do
   if dead state
-    then do
-      -- TODO Shrinking dying animation.
-      putStrAndFlush "Game Over"
+    then gameLoopStageEnd state
     else do
       let newHead' = newHead state
       let needShrink = grow state == 0
@@ -274,6 +272,18 @@ gameLoop state = do
       let newDead = dead state || didHitExit input || didBiteItself newHead' (parts state) || didCrossFrame
       threadDelay 100_000
       gameLoop state {parts = newParts, direction = newDirection', dead = newDead, grow = newGrow', food = newFood, rng = newRng}
+
+gameLoopStageEnd :: GameState -> IO ()
+gameLoopStageEnd state = do
+  forM_ (reverse $ parts state) erasePart
+  clearScreen
+  cursorToXY $ Coord (1, 1)
+  where
+    erasePart coord = do
+      cursorToXY coord
+      putChar ' '
+      hFlush stdout
+      threadDelay 100_000
 
 drawBaseState :: GameState -> IO ()
 drawBaseState state = do
