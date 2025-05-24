@@ -4,7 +4,7 @@ module Main where
 
 import Control.Concurrent (threadDelay)
 import Control.Exception qualified as Exception
-import Control.Monad (forM_, when)
+import Control.Monad (forM_, join, when)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Console.Terminal.Size qualified as TSize
 import System.IO (BufferMode (..), hFlush, hReady, hSetBuffering, hSetEcho, stdin, stdout)
@@ -42,11 +42,14 @@ pattern SOUTH = 2
 pattern WEST :: Int
 pattern WEST = 3
 
-pattern PART :: Char
-pattern PART = '█'
+pattern PART :: String
+pattern PART = "\ESC[94m▒\ESC[0m"
 
-pattern FOOD :: Char
-pattern FOOD = '$'
+pattern HEAD :: String
+pattern HEAD = "\ESC[94m█\ESC[0m"
+
+pattern FOOD :: String
+pattern FOOD = "\ESC[93m*\ESC[0m"
 
 pattern GROW_SIZE :: Int
 pattern GROW_SIZE = 3
@@ -54,8 +57,8 @@ pattern GROW_SIZE = 3
 pattern FOOD_TRY_LIMIT :: Int
 pattern FOOD_TRY_LIMIT = 16
 
-pattern FRAME :: Char
-pattern FRAME = '░'
+pattern FRAME :: String
+pattern FRAME = "\ESC[32m░\ESC[0m"
 
 newtype Coord = Coord (Int, Int) deriving (Show, Eq)
 
@@ -79,7 +82,7 @@ data GameState = MakeGameState
 data KeyStroke = KeyEsc | KeyLeft | KeyRight | KeyUp | KeyDown
 
 initGameState :: Coord -> Int -> GameState
-initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 16 rng' foodCoord
+initGameState frame@(Coord (w, h)) rngSeed = MakeGameState frame NORTH [Coord (w `div` 2, h `div` 2)] False 2 rng' foodCoord
   where
     rng = mkStdGen rngSeed
     (foodCoord, rng') = randCoord rng frame
@@ -255,8 +258,10 @@ gameLoop state = do
       let occupiedCoords = food state : newParts
       let (newFood, newRng) = if didEatFood then randCoordExcept (rng state) (frame state) occupiedCoords FOOD_TRY_LIMIT else (food state, rng state)
       let newGrow' = if didEatFood then newGrow + GROW_SIZE else newGrow
+      cursorToXY $ head (parts state)
+      putStr PART
       cursorToXY newHead'
-      putChar PART
+      putStr HEAD
       when needShrink $
         do
           cursorToXY $ last (parts state)
@@ -264,7 +269,7 @@ gameLoop state = do
       when didEatFood $
         do
           cursorToXY newFood
-          putChar FOOD
+          putStr FOOD
       hFlush stdout
       input <- nonBlockGetKeyStrokeAndFlushStdin
       let newDirection' = newDirection input (direction state)
@@ -285,29 +290,34 @@ gameLoopStageEnd state = do
       hFlush stdout
       threadDelay 100_000
 
+joinStr :: [String] -> String
+joinStr = foldl (<>) ""
+
 drawBaseState :: GameState -> IO ()
 drawBaseState state = do
   drawFrame
   mapM_ drawPart (parts state)
   cursorToXY $ food state
-  putChar FOOD
+  putStr FOOD
   hFlush stdout
   return ()
   where
     (Coord (width, height)) = frame state
     drawPart coord = do
       cursorToXY coord
-      putChar PART
-    hline = FRAME : replicate (width - 2) ' ' ++ [FRAME]
+      putStr PART
+    hline = FRAME ++ replicate (width - 2) ' ' ++ FRAME
     drawHLine i = do
       cursorToXY $ Coord (1, i)
       putStr hline
     drawFrame = do
       forM_ [2 .. (height - 1)] drawHLine
       cursorToXY $ Coord (1, 1)
-      putStr $ replicate width FRAME
+      putStr $ joinStr (replicate width FRAME)
       cursorToXY $ Coord (1, height)
-      putStr $ replicate width FRAME
+      putStr $ joinStr (replicate width FRAME)
+      cursorToXY $ Coord (3, 1)
+      putStr " hSnake "
 
 getCurrentTimestamp :: IO Int
 getCurrentTimestamp = floor <$> getPOSIXTime
