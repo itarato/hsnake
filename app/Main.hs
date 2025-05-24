@@ -55,7 +55,7 @@ pattern FOOD :: String
 pattern FOOD = "\ESC[93m*\ESC[0m"
 
 pattern GROW_SIZE :: Int
-pattern GROW_SIZE = 3
+pattern GROW_SIZE = 5
 
 pattern FOOD_TRY_LIMIT :: Int
 pattern FOOD_TRY_LIMIT = 16
@@ -303,7 +303,6 @@ gameLoop state = do
   where
     (Coord (_, h)) = frame state
 
--- TODO Make animation fix time independently from length.
 gameLoopStageEnd :: GameState -> IO ()
 gameLoopStageEnd state = do
   let animDelay = 2_000_000 `div` length (parts state)
